@@ -6,6 +6,7 @@ from datasets import load_dataset
 from modelscope import snapshot_download, AutoModelForCausalLM, AutoTokenizer
 import logging
 import json
+from modelscope.msdatasets import MsDataset
 
 def setup_logging():
     """设置日志配置"""
@@ -53,38 +54,13 @@ def download_model(model_name="qwen/Qwen2.5-7B", cache_dir="checkpoints"):
 
 def prepare_dataset(output_dir="data/processed"):
     """准备训练数据集"""
-    logger = logging.getLogger(__name__)
-    logger.info("Preparing dataset")
-    
-    # 示例对话数据
-    conversations = [
-        {
-            "conversations": [
-                {"role": "user", "content": "你好，请介绍一下你自己"},
-                {"role": "assistant", "content": "你好！我是一个AI助手，我可以帮助你回答问题、解决问题，并与你进行友好的对话。"}
-            ]
-        },
-        {
-            "conversations": [
-                {"role": "user", "content": "什么是机器学习？"},
-                {"role": "assistant", "content": "机器学习是人工智能的一个分支，它使计算机系统能够通过经验自动改进。简单来说，它让计算机能够从数据中学习，而不需要被明确编程。"}
-            ]
-        }
-    ]
-    
+    # 数据集使用Muice-Dataset
+    train_ds =  MsDataset.load('Moemuu/Muice-Dataset', subset_name='default', split='train')
+    test_ds =  MsDataset.load('Moemuu/Muice-Dataset', subset_name='default', split='test')
     # 保存为jsonl格式
-    output_file = os.path.join(output_dir, "train.jsonl")
-    with open(output_file, "w", encoding="utf-8") as f:
-        for conv in conversations:
-            f.write(json.dumps(conv, ensure_ascii=False) + "\n")
-    
-    logger.info(f"Created example dataset at {output_file}")
-    
-    # 加载数据集
-    dataset = load_dataset("json", data_files=output_file)
-    logger.info(f"Dataset loaded with {len(dataset['train'])} examples")
-    
-    return dataset
+    train_ds.save_to_file(os.path.join(output_dir, "train.jsonl"))
+    test_ds.save_to_file(os.path.join(output_dir, "test.jsonl"))
+    return train_ds, test_ds
 
 def main():
     # 设置日志
