@@ -3,7 +3,7 @@ from dataclasses import dataclass
 @dataclass
 class TrainingConfig:
     # 模型配置
-    model_name_or_path: str = "qwen/Qwen1.5-7B"
+    model_name_or_path: str = "qwen/Qwen2.5-7B"
     use_auth_token: bool = True
 
     # LoRA配置
