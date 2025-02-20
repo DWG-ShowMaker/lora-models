@@ -3,6 +3,8 @@ import logging
 from transformers import AutoTokenizer, AutoModelForCausalLM
 import torch
 from datasets import load_dataset
+from modelscope import snapshot_download, AutoModelForCausalLM, AutoTokenizer
+import logging
 import json
 
 def setup_logging():
