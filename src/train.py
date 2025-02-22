@@ -113,7 +113,7 @@ def main():
         train_dataset = train_dataset.map(
             preprocess_wrapper,
             batched=True,
-            batch_size=16,  # 使用更小的批量大小
+            batch_size=4,  # 使用更小的批量大小
             num_proc=1,  # 使用单进程以便调试
             remove_columns=train_dataset.column_names,
             desc="Preprocessing train dataset",
@@ -125,7 +125,7 @@ def main():
         eval_dataset = eval_dataset.map(
             preprocess_wrapper,
             batched=True,
-            batch_size=16,
+            batch_size=4,  # 使用更小的批量大小
             num_proc=1,
             remove_columns=eval_dataset.column_names,
             desc="Preprocessing eval dataset",
@@ -137,6 +137,13 @@ def main():
         logger.info(f"Processed eval dataset size: {len(eval_dataset)}")
         
         if len(train_dataset) == 0:
+            logger.error("No valid examples in processed training dataset")
+            # 打印原始数据集的一些样本以进行调试
+            logger.info("Original dataset samples:")
+            for i in range(min(5, len(train_dataset))):
+                logger.info(f"Sample {i}:")
+                logger.info(f"System: {train_dataset[i]['system']}")
+                logger.info(f"Conversation: {train_dataset[i]['conversation']}")
             raise ValueError("No valid examples in processed training dataset")
         
         # 检查处理后的数据集格式

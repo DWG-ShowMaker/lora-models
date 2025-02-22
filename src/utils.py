@@ -97,22 +97,39 @@ def preprocess_function(examples, tokenizer, max_length):
                     system = examples['system'][idx]
                     conv = examples['conversation'][idx]
                     
+                    # 调试信息
+                    logger.info(f"Sample {idx} - System: {system}")
+                    logger.info(f"Sample {idx} - Conversation type: {type(conv)}")
+                    
                     # 将system prompt和对话组合在一起
                     full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
                     
                     # 处理对话
-                    if isinstance(conv, list) and len(conv) > 0:
+                    if isinstance(conv, (list, str)):
+                        # 如果是字符串，尝试解析JSON
+                        if isinstance(conv, str):
+                            try:
+                                conv = json.loads(conv)
+                            except json.JSONDecodeError as e:
+                                logger.error(f"Failed to parse conversation JSON at index {idx}: {e}")
+                                continue
+                        
+                        # 确保conv是列表
+                        if not isinstance(conv, list):
+                            conv = [conv]
+                        
+                        # 调试信息
+                        logger.info(f"Sample {idx} - Parsed conversation: {conv}")
+                        
                         for turn in conv:
                             if isinstance(turn, dict):
                                 if "human" in turn and "assistant" in turn:
                                     full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
                                     full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
                     
+                    # 调试信息
+                    logger.info(f"Sample {idx} - Full conversation: {full_conversation}")
                     conversations.append(full_conversation)
-                    
-                    # 每处理100个样本记录一次进度
-                    if (idx + 1) % 100 == 0:
-                        logger.info(f"Processed {idx + 1} conversations")
                     
                 except Exception as e:
                     logger.error(f"Error processing conversation at index {idx}: {str(e)}")
