@@ -118,8 +118,8 @@ def main():
             model_dir,
             trust_remote_code=True,
             torch_dtype=torch.float16,
-            device_map="auto"
-        )
+            device_map=None  # 先不使用device_map
+        ).cuda()  # 直接移动到GPU
         logger.info("Model loaded successfully")
         
     except Exception as e:
