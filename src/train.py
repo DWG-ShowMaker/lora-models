@@ -1,8 +1,6 @@
 import os
 import sys
 from transformers import (
-    AutoModelForCausalLM,
-    AutoTokenizer,
     TrainingArguments,
     Trainer,
     default_data_collator,
@@ -10,6 +8,7 @@ from transformers import (
 from peft import get_peft_model, LoraConfig, TaskType
 import torch
 from datetime import datetime
+from modelscope import AutoModelForCausalLM, AutoTokenizer, snapshot_download
 
 # 添加项目根目录到系统路径
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -33,14 +32,16 @@ def main():
     # 设置随机种子
     set_random_seed(config.seed)
     
-    # 加载tokenizer和模型
+    # 使用ModelScope下载模型
     logger.info(f"Loading model from {config.model_name_or_path}")
+    model_dir = snapshot_download('qwen/Qwen2.5-7B', cache_dir='checkpoints')
+    
     tokenizer = AutoTokenizer.from_pretrained(
-        config.model_name_or_path,
+        model_dir,
         trust_remote_code=True
     )
     model = AutoModelForCausalLM.from_pretrained(
-        config.model_name_or_path,
+        model_dir,
         trust_remote_code=True,
         torch_dtype=torch.float16 if config.fp16 else torch.float32,
         device_map="auto"
