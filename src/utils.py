@@ -83,13 +83,17 @@ def preprocess_function(examples, tokenizer, max_length):
     logger = logging.getLogger(__name__)
     try:
         # 记录输入数据的结构
-        logger.info(f"Input examples keys: {examples.keys()}")
-        logger.info(f"Processing {len(examples['system'])} examples")
+        logger.info(f"Input examples columns: {examples.column_names}")
+        logger.info(f"Processing batch of size: {len(examples[examples.column_names[0]])}")
         
         # 处理对话数据
         conversations = []
-        for idx, (system, conv) in enumerate(zip(examples["system"], examples["conversation"])):
+        for idx in range(len(examples[examples.column_names[0]])):
             try:
+                # 获取system和conversation
+                system = examples['system'][idx] if 'system' in examples.column_names else ""
+                conv = examples['conversation'][idx] if 'conversation' in examples.column_names else []
+                
                 # 将system prompt和对话组合在一起
                 full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
                 

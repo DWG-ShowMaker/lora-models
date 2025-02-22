@@ -72,6 +72,10 @@ def main():
     # 数据预处理
     logger.info("Preprocessing dataset")
     try:
+        # 检查数据集格式
+        logger.info(f"Train dataset columns: {train_dataset.column_names}")
+        logger.info(f"Train dataset features: {train_dataset.features}")
+        
         # 首先处理一个小批量样本进行验证
         logger.info("Validating preprocessing with a small batch...")
         sample_data = train_dataset.select(range(min(5, len(train_dataset))))
@@ -80,8 +84,13 @@ def main():
         
         # 如果验证成功，处理完整数据集
         logger.info("Processing full dataset...")
+        
+        # 定义预处理函数包装器
+        def preprocess_wrapper(examples):
+            return preprocess_function(examples, tokenizer, config.max_seq_length)
+        
         train_dataset = train_dataset.map(
-            lambda x: preprocess_function(x, tokenizer, config.max_seq_length),
+            preprocess_wrapper,
             batched=True,
             batch_size=32,  # 使用较小的批量大小
             num_proc=1,  # 暂时使用单进程以便调试
@@ -90,7 +99,7 @@ def main():
         )
         
         eval_dataset = eval_dataset.map(
-            lambda x: preprocess_function(x, tokenizer, config.max_seq_length),
+            preprocess_wrapper,
             batched=True,
             batch_size=32,
             num_proc=1,
@@ -103,7 +112,9 @@ def main():
         
         # 验证处理后的数据集格式
         logger.info(f"Processed train dataset features: {train_dataset.features}")
-        logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
+        if len(train_dataset) > 0:
+            logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
+            logger.info(f"Sample processed labels shape: {train_dataset[0]['labels'].shape}")
         
     except Exception as e:
         logger.error(f"Error during dataset preprocessing: {str(e)}")
