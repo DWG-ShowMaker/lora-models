@@ -78,9 +78,20 @@ def main():
         
         # 首先处理一个小批量样本进行验证
         logger.info("Validating preprocessing with a small batch...")
-        sample_data = train_dataset.select(range(min(5, len(train_dataset))))
+        sample_size = min(5, len(train_dataset))
+        sample_data = train_dataset.select(range(sample_size))
+        
+        # 确保数据集格式正确
+        if 'system' not in sample_data.column_names or 'conversation' not in sample_data.column_names:
+            raise ValueError(f"Dataset missing required columns. Found columns: {sample_data.column_names}")
+        
+        sample_dict = {
+            "system": sample_data["system"],
+            "conversation": sample_data["conversation"]
+        }
+        
         sample_processed = preprocess_function(
-            {"system": sample_data["system"], "conversation": sample_data["conversation"]},
+            sample_dict,
             tokenizer,
             config.max_seq_length
         )
@@ -128,9 +139,11 @@ def main():
         if len(train_dataset) == 0:
             raise ValueError("No valid examples in processed training dataset")
         
+        # 检查处理后的数据集格式
         logger.info(f"Processed train dataset features: {train_dataset.features}")
-        logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
-        logger.info(f"Sample processed labels shape: {train_dataset[0]['labels'].shape}")
+        if len(train_dataset) > 0:
+            logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
+            logger.info(f"Sample processed labels shape: {train_dataset[0]['labels'].shape}")
         
     except Exception as e:
         logger.error(f"Error during dataset preprocessing: {str(e)}")

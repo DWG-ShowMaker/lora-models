@@ -86,48 +86,49 @@ def preprocess_function(examples, tokenizer, max_length):
         conversations = []
         
         # 获取批次大小
-        batch_size = len(examples['system']) if isinstance(examples, dict) else len(examples[0])
-        logger.info(f"Processing batch of size: {batch_size}")
-        
-        # 遍历批次中的每个样本
-        for idx in range(batch_size):
-            try:
-                # 获取system和conversation
-                system = examples['system'][idx] if isinstance(examples, dict) else examples[0][idx]
-                conv = examples['conversation'][idx] if isinstance(examples, dict) else examples[1][idx]
-                
-                # 将system prompt和对话组合在一起
-                full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
-                
-                # 处理对话列表
-                if isinstance(conv, (str, bytes)):
-                    # 如果conv是字符串，尝试解析JSON
-                    try:
-                        conv = json.loads(conv)
-                    except json.JSONDecodeError:
-                        logger.warning(f"Failed to parse conversation JSON at index {idx}")
-                        continue
-                
-                # 确保conv是列表
-                if not isinstance(conv, list):
-                    conv = [conv]
-                
-                for turn in conv:
-                    if isinstance(turn, dict):
-                        if "human" in turn:
-                            full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
-                        if "assistant" in turn:
-                            full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
-                
-                conversations.append(full_conversation)
-                
-                # 每处理100个样本记录一次进度
-                if (idx + 1) % 100 == 0:
-                    logger.info(f"Processed {idx + 1} conversations")
-                
-            except Exception as e:
-                logger.error(f"Error processing conversation at index {idx}: {str(e)}")
-                continue
+        if isinstance(examples, dict):
+            batch_size = len(examples['system'])
+            logger.info(f"Processing batch of size: {batch_size}")
+            
+            # 遍历批次中的每个样本
+            for idx in range(batch_size):
+                try:
+                    # 获取system和conversation
+                    system = examples['system'][idx]
+                    conv = examples['conversation'][idx]
+                    
+                    # 将system prompt和对话组合在一起
+                    full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
+                    
+                    # 处理对话列表
+                    if isinstance(conv, (str, bytes)):
+                        # 如果conv是字符串，尝试解析JSON
+                        try:
+                            conv = json.loads(conv)
+                        except json.JSONDecodeError:
+                            logger.warning(f"Failed to parse conversation JSON at index {idx}")
+                            continue
+                    
+                    # 确保conv是列表
+                    if not isinstance(conv, list):
+                        conv = [conv]
+                    
+                    for turn in conv:
+                        if isinstance(turn, dict):
+                            if "human" in turn:
+                                full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
+                            if "assistant" in turn:
+                                full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
+                    
+                    conversations.append(full_conversation)
+                    
+                    # 每处理100个样本记录一次进度
+                    if (idx + 1) % 100 == 0:
+                        logger.info(f"Processed {idx + 1} conversations")
+                    
+                except Exception as e:
+                    logger.error(f"Error processing conversation at index {idx}: {str(e)}")
+                    continue
         
         if not conversations:
             logger.warning("No valid conversations processed in this batch")
