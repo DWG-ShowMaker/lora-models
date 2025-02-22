@@ -57,6 +57,26 @@ def check_dataset_files():
             file_size = os.path.getsize(file_path)
             logger.info(f"{name} dataset size: {file_size/1024:.2f} KB")
 
+def check_model_files(model_dir):
+    """检查模型文件是否完整"""
+    required_files = ['config.json', 'pytorch_model.bin', 'tokenizer.json']
+    missing_files = [f for f in required_files if not os.path.exists(os.path.join(model_dir, f))]
+    return missing_files
+
+def download_model(cache_dir='checkpoints'):
+    """从ModelScope下载模型"""
+    logger.info("Downloading model from ModelScope...")
+    try:
+        model_dir = snapshot_download(
+            'qwen/Qwen2.5-7B',
+            cache_dir=cache_dir,
+            revision='master'
+        )
+        logger.info(f"Model downloaded successfully to {model_dir}")
+        return model_dir
+    except Exception as e:
+        raise RuntimeError(f"Failed to download model: {str(e)}")
+
 def main():
     # 确保目录结构存在
     ensure_directory_exists()
@@ -69,20 +89,21 @@ def main():
     
     # 检查本地模型
     model_dir = os.path.join("checkpoints", "qwen/Qwen2.5-7B")
-    if not os.path.exists(model_dir):
-        logger.info(f"Local model not found, downloading from ModelScope...")
-        try:
-            model_dir = snapshot_download('qwen/Qwen2.5-7B', cache_dir='checkpoints')
-            logger.info(f"Model downloaded successfully to {model_dir}")
-        except Exception as e:
-            raise RuntimeError(f"Failed to download model: {str(e)}")
-    else:
-        logger.info(f"Using local model from {model_dir}")
-        # 验证模型文件完整性
-        required_files = ['config.json', 'pytorch_model.bin', 'tokenizer.json']
-        missing_files = [f for f in required_files if not os.path.exists(os.path.join(model_dir, f))]
+    if os.path.exists(model_dir):
+        logger.info(f"Found local model at {model_dir}")
+        missing_files = check_model_files(model_dir)
         if missing_files:
-            raise FileNotFoundError(f"Model directory is incomplete. Missing files: {', '.join(missing_files)}")
+            logger.warning(f"Local model is incomplete. Missing files: {', '.join(missing_files)}")
+            logger.info("Will download model from ModelScope...")
+            model_dir = download_model()
+    else:
+        logger.info("Local model not found")
+        model_dir = download_model()
+    
+    # 再次验证模型文件完整性
+    missing_files = check_model_files(model_dir)
+    if missing_files:
+        raise FileNotFoundError(f"Model directory is still incomplete after download. Missing files: {', '.join(missing_files)}")
     
     # 加载tokenizer和模型
     logger.info("Loading tokenizer and model...")
