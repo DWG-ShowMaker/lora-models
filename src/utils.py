@@ -87,6 +87,9 @@ def preprocess_function(examples, tokenizer):
     Returns:
         处理后的样本，包含 input_ids 和 labels
     """
+    # 获取logger
+    logger = logging.getLogger(__name__)
+    
     max_length = 512  # 最大序列长度
     conversations = []
     
@@ -111,7 +114,6 @@ def preprocess_function(examples, tokenizer):
                     full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
             
             conversations.append(full_conversation)
-            logger.debug(f"Processed conversation {i}: {full_conversation[:100]}...")
             
         except Exception as e:
             logger.warning(f"Error processing sample {i}: {str(e)}")
@@ -119,10 +121,17 @@ def preprocess_function(examples, tokenizer):
     
     if not conversations:
         logger.warning("No valid conversations processed")
-        return {"input_ids": [], "attention_mask": [], "labels": []}
+        # 返回空张量，保持与期望的形状一致
+        empty_tensor = torch.zeros((0, max_length), dtype=torch.long)
+        return {
+            "input_ids": empty_tensor,
+            "attention_mask": empty_tensor,
+            "labels": empty_tensor
+        }
     
     # Tokenize conversations
     try:
+        # 使用tokenizer处理文本
         tokenized = tokenizer(
             conversations,
             max_length=max_length,
@@ -131,15 +140,25 @@ def preprocess_function(examples, tokenizer):
             return_tensors="pt"
         )
         
-        # 设置labels与input_ids相同
-        tokenized["labels"] = tokenized["input_ids"].clone()
+        # 创建标签，复制input_ids
+        labels = tokenized["input_ids"].clone()
         
-        logger.info(f"Successfully tokenized {len(conversations)} conversations")
-        return tokenized
+        # 返回处理后的数据
+        return {
+            "input_ids": tokenized["input_ids"],
+            "attention_mask": tokenized["attention_mask"],
+            "labels": labels
+        }
         
     except Exception as e:
         logger.error(f"Tokenization failed: {str(e)}")
-        return {"input_ids": [], "attention_mask": [], "labels": []}
+        # 返回空张量，保持与期望的形状一致
+        empty_tensor = torch.zeros((0, max_length), dtype=torch.long)
+        return {
+            "input_ids": empty_tensor,
+            "attention_mask": empty_tensor,
+            "labels": empty_tensor
+        }
 
 def compute_metrics(eval_preds):
     """计算评估指标"""
