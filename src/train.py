@@ -114,12 +114,19 @@ def main():
         )
         logger.info("Tokenizer loaded successfully")
         
+        # 使用8bit量化加载模型
         model = AutoModelForCausalLM.from_pretrained(
             model_dir,
             trust_remote_code=True,
-            torch_dtype=torch.float16,
-            device_map=None  # 先不使用device_map
-        ).cuda()  # 直接移动到GPU
+            load_in_8bit=True,
+            device_map="auto",
+            torch_dtype=torch.float16
+        )
+        
+        # 启用梯度检查点
+        model.gradient_checkpointing_enable()
+        model.enable_input_require_grads()
+        
         logger.info("Model loaded successfully")
         
     except Exception as e:
@@ -134,8 +141,13 @@ def main():
         lora_alpha=config.lora_alpha,
         lora_dropout=config.lora_dropout,
         target_modules=config.lora_target_modules,
+        bias="none",
+        task_type="CAUSAL_LM"
     )
     model = get_peft_model(model, peft_config)
+    
+    # 打印可训练参数信息
+    model.print_trainable_parameters()
     logger.info("LoRA configuration completed")
     
     # 加载数据集
@@ -180,15 +192,17 @@ def main():
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=config.num_train_epochs,
-        per_device_train_batch_size=config.per_device_train_batch_size,
-        gradient_accumulation_steps=config.gradient_accumulation_steps,
+        per_device_train_batch_size=1,  # 减小批处理大小
+        gradient_accumulation_steps=16,  # 增加梯度累积步数
         learning_rate=config.learning_rate,
         weight_decay=0.01,
         warmup_ratio=config.warmup_ratio,
         logging_steps=config.logging_steps,
         save_strategy="epoch",
         evaluation_strategy="no",
-        fp16=config.fp16
+        fp16=True,
+        gradient_checkpointing=True,  # 启用梯度检查点
+        optim="paged_adamw_8bit"  # 使用8bit优化器
     )
     
     # 初始化trainer
