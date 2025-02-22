@@ -128,7 +128,7 @@ def main():
             bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_use_double_quant=True,
             bnb_4bit_quant_type="nf4",
-            bnb_4bit_quant_storage=torch.float16  # 使用float16存储量化权重
+            bnb_4bit_quant_storage=torch.float16
         )
         
         model = AutoModelForCausalLM.from_pretrained(
@@ -137,12 +137,12 @@ def main():
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.float16,
-            max_memory={0: "14GB"},  # 适当增加显存限制
-            use_flash_attention_2=True,  # 使用Flash Attention 2提高效率
-            pretraining_tp=1  # 禁用张量并行以减少显存碎片
+            max_memory={0: "14GB"},
+            attn_implementation="flash_attention_2"  # 使用新的flash attention参数
         )
         
         # 启用优化
+        model.config.use_cache = False  # 训练时禁用KV缓存
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
         
@@ -217,9 +217,9 @@ def main():
     training_args = TrainingArguments(
         output_dir=output_dir,
         num_train_epochs=3,
-        per_device_train_batch_size=2,      # 增加到2
-        gradient_accumulation_steps=16,      # 减少梯度累积步数
-        learning_rate=2e-4,                 # 略微提高学习率
+        per_device_train_batch_size=2,
+        gradient_accumulation_steps=16,
+        learning_rate=2e-4,
         weight_decay=0.01,
         warmup_ratio=0.03,
         logging_steps=10,
@@ -233,12 +233,11 @@ def main():
         report_to=["wandb"],
         ddp_find_unused_parameters=False,
         dataloader_pin_memory=False,
-        dataloader_num_workers=2,           # 使用2个工作进程加载数据
-        group_by_length=True,              # 按长度分组以减少padding
-        length_column_name="length",
+        dataloader_num_workers=2,
+        group_by_length=True,
         ignore_data_skip=True,
-        bf16=False,                        # 禁用bf16以避免潜在问题
-        torch_compile=True,                # 启用PyTorch 2.0编译优化
+        bf16=False,
+        torch_compile=False,  # 禁用torch_compile以避免潜在问题
         use_cpu=False
     )
     
