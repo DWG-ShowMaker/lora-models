@@ -80,23 +80,56 @@ def load_dataset():
 
 def preprocess_function(examples, tokenizer, max_length):
     """预处理数据集"""
+    logger = logging.getLogger(__name__)
     try:
+        # 记录输入数据的结构
+        logger.info(f"Input examples keys: {examples.keys()}")
+        logger.info(f"Processing {len(examples['system'])} examples")
+        
         # 处理对话数据
         conversations = []
-        for system, conv in zip(examples["system"], examples["conversation"]):
-            # 将system prompt和对话组合在一起
-            full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
-            
-            # 处理对话列表
-            for turn in conv:
-                if "human" in turn:
-                    full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
-                if "assistant" in turn:
-                    full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
-            
-            conversations.append(full_conversation)
+        for idx, (system, conv) in enumerate(zip(examples["system"], examples["conversation"])):
+            try:
+                # 将system prompt和对话组合在一起
+                full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
+                
+                # 处理对话列表
+                if isinstance(conv, str):
+                    # 如果conv是字符串，尝试解析JSON
+                    try:
+                        conv = json.loads(conv)
+                    except json.JSONDecodeError:
+                        logger.warning(f"Failed to parse conversation JSON at index {idx}")
+                        continue
+                
+                if not isinstance(conv, list):
+                    logger.warning(f"Conversation at index {idx} is not a list: {type(conv)}")
+                    continue
+                
+                for turn in conv:
+                    if not isinstance(turn, dict):
+                        logger.warning(f"Turn at index {idx} is not a dict: {type(turn)}")
+                        continue
+                        
+                    if "human" in turn:
+                        full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
+                    if "assistant" in turn:
+                        full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
+                
+                conversations.append(full_conversation)
+                
+                # 每处理100个样本记录一次进度
+                if (idx + 1) % 100 == 0:
+                    logger.info(f"Processed {idx + 1} conversations")
+                
+            except Exception as e:
+                logger.error(f"Error processing conversation at index {idx}: {str(e)}")
+                continue
+        
+        logger.info(f"Successfully processed {len(conversations)} conversations")
         
         # 使用tokenizer处理文本
+        logger.info("Tokenizing conversations...")
         model_inputs = tokenizer(
             conversations,
             max_length=max_length,
@@ -108,10 +141,12 @@ def preprocess_function(examples, tokenizer, max_length):
         # 设置labels与input_ids相同（用于自回归训练）
         model_inputs["labels"] = model_inputs["input_ids"].clone()
         
+        logger.info(f"Tokenization completed. Input shape: {model_inputs['input_ids'].shape}")
         return model_inputs
         
     except Exception as e:
-        logging.error(f"Error in preprocessing: {str(e)}")
+        logger.error(f"Error in preprocessing: {str(e)}")
+        logger.error(f"Error details: {type(e).__name__}")
         raise
 
 def compute_metrics(eval_preds):

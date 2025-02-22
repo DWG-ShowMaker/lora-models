@@ -71,16 +71,44 @@ def main():
     
     # 数据预处理
     logger.info("Preprocessing dataset")
-    train_dataset = train_dataset.map(
-        lambda x: preprocess_function(x, tokenizer, config.max_seq_length),
-        batched=True,
-        num_proc=config.preprocessing_num_workers,
-    )
-    eval_dataset = eval_dataset.map(
-        lambda x: preprocess_function(x, tokenizer, config.max_seq_length),
-        batched=True,
-        num_proc=config.preprocessing_num_workers,
-    )
+    try:
+        # 首先处理一个小批量样本进行验证
+        logger.info("Validating preprocessing with a small batch...")
+        sample_data = train_dataset.select(range(min(5, len(train_dataset))))
+        sample_processed = preprocess_function(sample_data, tokenizer, config.max_seq_length)
+        logger.info("Sample preprocessing successful")
+        
+        # 如果验证成功，处理完整数据集
+        logger.info("Processing full dataset...")
+        train_dataset = train_dataset.map(
+            lambda x: preprocess_function(x, tokenizer, config.max_seq_length),
+            batched=True,
+            batch_size=32,  # 使用较小的批量大小
+            num_proc=1,  # 暂时使用单进程以便调试
+            remove_columns=train_dataset.column_names,  # 移除原始列
+            desc="Preprocessing train dataset"
+        )
+        
+        eval_dataset = eval_dataset.map(
+            lambda x: preprocess_function(x, tokenizer, config.max_seq_length),
+            batched=True,
+            batch_size=32,
+            num_proc=1,
+            remove_columns=eval_dataset.column_names,
+            desc="Preprocessing eval dataset"
+        )
+        
+        logger.info(f"Train dataset size: {len(train_dataset)}")
+        logger.info(f"Eval dataset size: {len(eval_dataset)}")
+        
+        # 验证处理后的数据集格式
+        logger.info(f"Processed train dataset features: {train_dataset.features}")
+        logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
+        
+    except Exception as e:
+        logger.error(f"Error during dataset preprocessing: {str(e)}")
+        logger.error(f"Error type: {type(e).__name__}")
+        raise
     
     # 配置训练参数
     training_args = TrainingArguments(
