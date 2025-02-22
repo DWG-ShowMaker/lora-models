@@ -79,7 +79,11 @@ def main():
         # 首先处理一个小批量样本进行验证
         logger.info("Validating preprocessing with a small batch...")
         sample_data = train_dataset.select(range(min(5, len(train_dataset))))
-        sample_processed = preprocess_function(sample_data, tokenizer, config.max_seq_length)
+        sample_processed = preprocess_function(
+            {"system": sample_data["system"], "conversation": sample_data["conversation"]},
+            tokenizer,
+            config.max_seq_length
+        )
         logger.info("Sample preprocessing successful")
         
         # 如果验证成功，处理完整数据集
@@ -87,34 +91,46 @@ def main():
         
         # 定义预处理函数包装器
         def preprocess_wrapper(examples):
-            return preprocess_function(examples, tokenizer, config.max_seq_length)
+            try:
+                return preprocess_function(examples, tokenizer, config.max_seq_length)
+            except Exception as e:
+                logger.error(f"Error in preprocess_wrapper: {str(e)}")
+                raise
         
+        # 处理训练集
+        logger.info("Processing training dataset...")
         train_dataset = train_dataset.map(
             preprocess_wrapper,
             batched=True,
-            batch_size=32,  # 使用较小的批量大小
-            num_proc=1,  # 暂时使用单进程以便调试
-            remove_columns=train_dataset.column_names,  # 移除原始列
-            desc="Preprocessing train dataset"
+            batch_size=16,  # 使用更小的批量大小
+            num_proc=1,  # 使用单进程以便调试
+            remove_columns=train_dataset.column_names,
+            desc="Preprocessing train dataset",
+            load_from_cache_file=False  # 禁用缓存以便调试
         )
         
+        # 处理评估集
+        logger.info("Processing evaluation dataset...")
         eval_dataset = eval_dataset.map(
             preprocess_wrapper,
             batched=True,
-            batch_size=32,
+            batch_size=16,
             num_proc=1,
             remove_columns=eval_dataset.column_names,
-            desc="Preprocessing eval dataset"
+            desc="Preprocessing eval dataset",
+            load_from_cache_file=False
         )
         
-        logger.info(f"Train dataset size: {len(train_dataset)}")
-        logger.info(f"Eval dataset size: {len(eval_dataset)}")
+        # 验证处理后的数据集
+        logger.info(f"Processed train dataset size: {len(train_dataset)}")
+        logger.info(f"Processed eval dataset size: {len(eval_dataset)}")
         
-        # 验证处理后的数据集格式
+        if len(train_dataset) == 0:
+            raise ValueError("No valid examples in processed training dataset")
+        
         logger.info(f"Processed train dataset features: {train_dataset.features}")
-        if len(train_dataset) > 0:
-            logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
-            logger.info(f"Sample processed labels shape: {train_dataset[0]['labels'].shape}")
+        logger.info(f"Sample processed input shape: {train_dataset[0]['input_ids'].shape}")
+        logger.info(f"Sample processed labels shape: {train_dataset[0]['labels'].shape}")
         
     except Exception as e:
         logger.error(f"Error during dataset preprocessing: {str(e)}")

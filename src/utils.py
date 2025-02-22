@@ -82,23 +82,25 @@ def preprocess_function(examples, tokenizer, max_length):
     """预处理数据集"""
     logger = logging.getLogger(__name__)
     try:
-        # 记录输入数据的结构
-        logger.info(f"Input examples columns: {examples.column_names}")
-        logger.info(f"Processing batch of size: {len(examples[examples.column_names[0]])}")
-        
         # 处理对话数据
         conversations = []
-        for idx in range(len(examples[examples.column_names[0]])):
+        
+        # 获取批次大小
+        batch_size = len(examples['system']) if isinstance(examples, dict) else len(examples[0])
+        logger.info(f"Processing batch of size: {batch_size}")
+        
+        # 遍历批次中的每个样本
+        for idx in range(batch_size):
             try:
                 # 获取system和conversation
-                system = examples['system'][idx] if 'system' in examples.column_names else ""
-                conv = examples['conversation'][idx] if 'conversation' in examples.column_names else []
+                system = examples['system'][idx] if isinstance(examples, dict) else examples[0][idx]
+                conv = examples['conversation'][idx] if isinstance(examples, dict) else examples[1][idx]
                 
                 # 将system prompt和对话组合在一起
                 full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
                 
                 # 处理对话列表
-                if isinstance(conv, str):
+                if isinstance(conv, (str, bytes)):
                     # 如果conv是字符串，尝试解析JSON
                     try:
                         conv = json.loads(conv)
@@ -106,19 +108,16 @@ def preprocess_function(examples, tokenizer, max_length):
                         logger.warning(f"Failed to parse conversation JSON at index {idx}")
                         continue
                 
+                # 确保conv是列表
                 if not isinstance(conv, list):
-                    logger.warning(f"Conversation at index {idx} is not a list: {type(conv)}")
-                    continue
+                    conv = [conv]
                 
                 for turn in conv:
-                    if not isinstance(turn, dict):
-                        logger.warning(f"Turn at index {idx} is not a dict: {type(turn)}")
-                        continue
-                        
-                    if "human" in turn:
-                        full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
-                    if "assistant" in turn:
-                        full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
+                    if isinstance(turn, dict):
+                        if "human" in turn:
+                            full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
+                        if "assistant" in turn:
+                            full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
                 
                 conversations.append(full_conversation)
                 
@@ -129,6 +128,15 @@ def preprocess_function(examples, tokenizer, max_length):
             except Exception as e:
                 logger.error(f"Error processing conversation at index {idx}: {str(e)}")
                 continue
+        
+        if not conversations:
+            logger.warning("No valid conversations processed in this batch")
+            # 返回空的张量，保持与预期输出格式一致
+            return {
+                "input_ids": torch.zeros((0, max_length), dtype=torch.long),
+                "attention_mask": torch.zeros((0, max_length), dtype=torch.long),
+                "labels": torch.zeros((0, max_length), dtype=torch.long)
+            }
         
         logger.info(f"Successfully processed {len(conversations)} conversations")
         
