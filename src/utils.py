@@ -82,64 +82,64 @@ def preprocess_function(examples, tokenizer):
     """
     预处理函数，用于处理数据集中的样本。
     Args:
-        examples: 包含system和conversation字段的样本
-        tokenizer: 用于tokenize文本的tokenizer
+        examples: LazyBatch 对象，包含 system 和 conversation 字段
+        tokenizer: 用于 tokenize 文本的 tokenizer
     Returns:
-        处理后的样本，包含input_ids和labels
+        处理后的样本，包含 input_ids 和 labels
     """
     max_length = 512  # 最大序列长度
     conversations = []
     
-    # 确保examples是字典类型
-    if isinstance(examples, dict):
-        batch_size = len(examples["system"])
-    else:
-        print(f"Warning: examples is not a dict, type: {type(examples)}")
-        return {"input_ids": [], "labels": []}
-
+    # 获取批次大小
+    batch_size = len(examples["system"])
+    logger.info(f"Processing batch of size: {batch_size}")
+    
     # 处理每个样本
     for i in range(batch_size):
         try:
+            # 获取system和conversation
             system = examples["system"][i]
-            conv = examples["conversation"][i]
+            conversation = examples["conversation"][i]
             
-            if not isinstance(conv, list):
-                print(f"Warning: conversation is not a list, type: {type(conv)}")
-                continue
-                
             # 构建完整对话
-            full_conversation = f"System: {system}\n"
-            for turn in conv:
-                if not isinstance(turn, dict):
-                    print(f"Warning: turn is not a dict, type: {type(turn)}")
-                    continue
-                    
-                if "human" in turn and "assistant" in turn:
-                    full_conversation += f"Human: {turn['human']}\nAssistant: {turn['assistant']}\n"
+            full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
+            
+            # 处理对话
+            for turn in conversation:
+                if isinstance(turn, dict) and "human" in turn and "assistant" in turn:
+                    full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
+                    full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
             
             conversations.append(full_conversation)
+            logger.debug(f"Processed conversation {i}: {full_conversation[:100]}...")
             
         except Exception as e:
-            print(f"Error processing sample {i}: {str(e)}")
+            logger.warning(f"Error processing sample {i}: {str(e)}")
             continue
     
     if not conversations:
-        print("Warning: No valid conversations processed")
-        return {"input_ids": [], "labels": []}
-        
-    # Tokenize conversations
-    tokenized = tokenizer(
-        conversations,
-        max_length=max_length,
-        truncation=True,
-        padding="max_length",
-        return_tensors="pt"
-    )
+        logger.warning("No valid conversations processed")
+        return {"input_ids": [], "attention_mask": [], "labels": []}
     
-    return {
-        "input_ids": tokenized["input_ids"],
-        "labels": tokenized["input_ids"].clone()
-    }
+    # Tokenize conversations
+    try:
+        tokenized = tokenizer(
+            conversations,
+            max_length=max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt"
+        )
+        
+        # 设置labels与input_ids相同
+        tokenized["labels"] = tokenized["input_ids"].clone()
+        
+        logger.info(f"Successfully tokenized {len(conversations)} conversations")
+        return tokenized
+        
+    except Exception as e:
+        logger.error(f"Tokenization failed: {str(e)}")
+        return {"input_ids": [], "attention_mask": [], "labels": []}
 
 def compute_metrics(eval_preds):
     """计算评估指标"""
