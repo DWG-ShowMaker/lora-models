@@ -160,12 +160,10 @@ def main():
         learning_rate=config.learning_rate,
         max_grad_norm=config.max_grad_norm,
         warmup_ratio=config.warmup_ratio,
-        evaluation_strategy=config.evaluation_strategy,
-        eval_steps=config.eval_steps,
-        save_strategy=config.save_strategy,
+        evaluation_strategy="no",  # 不使用验证
+        save_strategy="steps",
         save_steps=config.save_steps,
         save_total_limit=config.save_total_limit,
-        load_best_model_at_end=config.load_best_model_at_end,
         fp16=config.fp16,
         logging_steps=config.logging_steps,
         report_to=config.report_to,
@@ -176,10 +174,8 @@ def main():
         model=model,
         args=training_args,
         train_dataset=train_dataset,
-        eval_dataset=eval_dataset,
         tokenizer=tokenizer,
         data_collator=default_data_collator,
-        compute_metrics=compute_metrics,
     )
     
     # 开始训练

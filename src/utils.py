@@ -100,25 +100,13 @@ def preprocess_function(examples, tokenizer, max_length):
                     # 将system prompt和对话组合在一起
                     full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
                     
-                    # 处理对话列表
-                    if isinstance(conv, (str, bytes)):
-                        # 如果conv是字符串，尝试解析JSON
-                        try:
-                            conv = json.loads(conv)
-                        except json.JSONDecodeError:
-                            logger.warning(f"Failed to parse conversation JSON at index {idx}")
-                            continue
-                    
-                    # 确保conv是列表
-                    if not isinstance(conv, list):
-                        conv = [conv]
-                    
-                    for turn in conv:
-                        if isinstance(turn, dict):
-                            if "human" in turn:
-                                full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
-                            if "assistant" in turn:
-                                full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
+                    # 处理对话
+                    if isinstance(conv, list) and len(conv) > 0:
+                        for turn in conv:
+                            if isinstance(turn, dict):
+                                if "human" in turn and "assistant" in turn:
+                                    full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
+                                    full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
                     
                     conversations.append(full_conversation)
                     
