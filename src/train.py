@@ -59,7 +59,7 @@ def check_dataset_files():
 
 def check_model_files(model_dir):
     """检查模型文件是否完整"""
-    required_files = ['config.json', 'pytorch_model.bin', 'tokenizer.json']
+    required_files = ['config.json', 'tokenizer.json']
     missing_files = [f for f in required_files if not os.path.exists(os.path.join(model_dir, f))]
     return missing_files
 
