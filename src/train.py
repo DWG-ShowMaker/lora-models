@@ -137,8 +137,7 @@ def main():
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.float16,
-            max_memory={0: "14GB"},
-            attn_implementation="flash_attention_2"  # 使用新的flash attention参数
+            max_memory={0: "14GB"}
         )
         
         # 启用优化
