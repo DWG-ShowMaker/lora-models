@@ -6,6 +6,7 @@ from transformers import (
     TrainingArguments,
     Trainer,
     default_data_collator,
+    BitsAndBytesConfig
 )
 from peft import get_peft_model, LoraConfig, TaskType
 import torch
@@ -87,6 +88,13 @@ def main():
     # 设置随机种子
     torch.manual_seed(42)
     
+    # 检查CUDA可用性
+    if not torch.cuda.is_available():
+        raise RuntimeError("CUDA is not available. Please check your GPU installation.")
+    
+    logger.info(f"Using GPU: {torch.cuda.get_device_name(0)}")
+    logger.info(f"Available GPU memory: {torch.cuda.get_device_properties(0).total_memory / 1024**3:.2f} GB")
+    
     # 检查本地模型
     model_dir = os.path.join("checkpoints", "qwen/Qwen2.5-7B")
     if os.path.exists(model_dir):
@@ -114,20 +122,31 @@ def main():
         )
         logger.info("Tokenizer loaded successfully")
         
-        # 使用8bit量化加载模型
+        # 使用4bit量化加载模型
+        quantization_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+            bnb_4bit_quant_type="nf4"
+        )
+        
         model = AutoModelForCausalLM.from_pretrained(
             model_dir,
             trust_remote_code=True,
-            load_in_8bit=True,
+            quantization_config=quantization_config,
             device_map="auto",
-            torch_dtype=torch.float16
+            torch_dtype=torch.float16,
+            max_memory={0: "12GB"}  # 限制GPU显存使用
         )
         
-        # 启用梯度检查点
+        # 启用梯度检查点和其他优化
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
         
-        logger.info("Model loaded successfully")
+        # 清理缓存
+        torch.cuda.empty_cache()
+        
+        logger.info(f"Model loaded successfully. Current GPU memory usage: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
         
     except Exception as e:
         raise RuntimeError(f"Failed to load model or tokenizer: {str(e)}")
@@ -137,10 +156,10 @@ def main():
     peft_config = LoraConfig(
         task_type=TaskType.CAUSAL_LM,
         inference_mode=False,
-        r=config.lora_r,
-        lora_alpha=config.lora_alpha,
-        lora_dropout=config.lora_dropout,
-        target_modules=config.lora_target_modules,
+        r=8,  # 减小LoRA秩
+        lora_alpha=32,
+        lora_dropout=0.1,
+        target_modules=["q_proj", "v_proj"],  # 只在部分模块上应用LoRA
         bias="none",
         task_type="CAUSAL_LM"
     )
@@ -191,18 +210,23 @@ def main():
     
     training_args = TrainingArguments(
         output_dir=output_dir,
-        num_train_epochs=config.num_train_epochs,
-        per_device_train_batch_size=1,  # 减小批处理大小
-        gradient_accumulation_steps=16,  # 增加梯度累积步数
-        learning_rate=config.learning_rate,
+        num_train_epochs=3,  # 减少训练轮数
+        per_device_train_batch_size=1,
+        gradient_accumulation_steps=32,  # 增加梯度累积步数
+        learning_rate=1e-4,  # 降低学习率
         weight_decay=0.01,
-        warmup_ratio=config.warmup_ratio,
-        logging_steps=config.logging_steps,
+        warmup_ratio=0.03,
+        logging_steps=10,
         save_strategy="epoch",
         evaluation_strategy="no",
         fp16=True,
-        gradient_checkpointing=True,  # 启用梯度检查点
-        optim="paged_adamw_8bit"  # 使用8bit优化器
+        gradient_checkpointing=True,
+        optim="paged_adamw_32bit",  # 使用32bit优化器
+        max_grad_norm=0.3,  # 添加梯度裁剪
+        lr_scheduler_type="cosine",  # 使用cosine学习率调度
+        report_to=["wandb"],
+        ddp_find_unused_parameters=False,
+        dataloader_pin_memory=False  # 禁用pin_memory以节省显存
     )
     
     # 初始化trainer
