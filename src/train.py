@@ -160,8 +160,7 @@ def main():
         lora_alpha=32,
         lora_dropout=0.1,
         target_modules=["q_proj", "v_proj"],  # 只在部分模块上应用LoRA
-        bias="none",
-        task_type="CAUSAL_LM"
+        bias="none"
     )
     model = get_peft_model(model, peft_config)
     
