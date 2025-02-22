@@ -6,6 +6,7 @@ import torch
 from transformers import set_seed
 from modelscope.msdatasets import MsDataset
 import json
+from datasets import load_dataset as hf_load_dataset
 
 def setup_logging(save_path):
     """设置日志配置"""
@@ -39,8 +40,8 @@ def load_dataset():
         
         if os.path.exists(train_file) and os.path.exists(test_file):
             logger.info("Loading local datasets...")
-            train_dataset = load_dataset("json", data_files=train_file)["train"]
-            test_dataset = load_dataset("json", data_files=test_file)["train"]
+            train_dataset = hf_load_dataset('json', data_files={'train': train_file})['train']
+            test_dataset = hf_load_dataset('json', data_files={'train': test_file})['train']
             
             logger.info(f"Loaded local datasets - Train: {len(train_dataset)} examples, Test: {len(test_dataset)} examples")
             return train_dataset, test_dataset
