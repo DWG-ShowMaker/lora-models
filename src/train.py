@@ -127,7 +127,8 @@ def main():
             load_in_4bit=True,
             bnb_4bit_compute_dtype=torch.float16,
             bnb_4bit_use_double_quant=True,
-            bnb_4bit_quant_type="nf4"
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_quant_storage=torch.float16  # 使用float16存储量化权重
         )
         
         model = AutoModelForCausalLM.from_pretrained(
@@ -136,17 +137,22 @@ def main():
             quantization_config=quantization_config,
             device_map="auto",
             torch_dtype=torch.float16,
-            max_memory={0: "12GB"}  # 限制GPU显存使用
+            max_memory={0: "14GB"},  # 适当增加显存限制
+            use_flash_attention_2=True,  # 使用Flash Attention 2提高效率
+            pretraining_tp=1  # 禁用张量并行以减少显存碎片
         )
         
-        # 启用梯度检查点和其他优化
+        # 启用优化
         model.gradient_checkpointing_enable()
         model.enable_input_require_grads()
         
         # 清理缓存
         torch.cuda.empty_cache()
         
-        logger.info(f"Model loaded successfully. Current GPU memory usage: {torch.cuda.memory_allocated() / 1024**3:.2f} GB")
+        # 显示详细的显存使用情况
+        allocated = torch.cuda.memory_allocated() / 1024**3
+        reserved = torch.cuda.memory_reserved() / 1024**3
+        logger.info(f"Model loaded successfully. GPU memory: allocated={allocated:.2f}GB, reserved={reserved:.2f}GB")
         
     except Exception as e:
         raise RuntimeError(f"Failed to load model or tokenizer: {str(e)}")
@@ -192,7 +198,8 @@ def main():
         tokenized_datasets = dataset.map(
             lambda x: preprocess_function(x, tokenizer),
             batched=True,
-            batch_size=4,
+            batch_size=8,  # 增加批处理大小以提高预处理效率
+            num_proc=4,    # 使用多进程加速预处理
             remove_columns=dataset["train"].column_names
         )
         logger.info(f"Preprocessing completed. Train size: {len(tokenized_datasets['train'])}")
@@ -209,10 +216,10 @@ def main():
     
     training_args = TrainingArguments(
         output_dir=output_dir,
-        num_train_epochs=3,  # 减少训练轮数
-        per_device_train_batch_size=1,
-        gradient_accumulation_steps=32,  # 增加梯度累积步数
-        learning_rate=1e-4,  # 降低学习率
+        num_train_epochs=3,
+        per_device_train_batch_size=2,      # 增加到2
+        gradient_accumulation_steps=16,      # 减少梯度累积步数
+        learning_rate=2e-4,                 # 略微提高学习率
         weight_decay=0.01,
         warmup_ratio=0.03,
         logging_steps=10,
@@ -220,12 +227,19 @@ def main():
         evaluation_strategy="no",
         fp16=True,
         gradient_checkpointing=True,
-        optim="paged_adamw_32bit",  # 使用32bit优化器
-        max_grad_norm=0.3,  # 添加梯度裁剪
-        lr_scheduler_type="cosine",  # 使用cosine学习率调度
+        optim="paged_adamw_32bit",
+        max_grad_norm=0.3,
+        lr_scheduler_type="cosine",
         report_to=["wandb"],
         ddp_find_unused_parameters=False,
-        dataloader_pin_memory=False  # 禁用pin_memory以节省显存
+        dataloader_pin_memory=False,
+        dataloader_num_workers=2,           # 使用2个工作进程加载数据
+        group_by_length=True,              # 按长度分组以减少padding
+        length_column_name="length",
+        ignore_data_skip=True,
+        bf16=False,                        # 禁用bf16以避免潜在问题
+        torch_compile=True,                # 启用PyTorch 2.0编译优化
+        use_cpu=False
     )
     
     # 初始化trainer
@@ -237,9 +251,14 @@ def main():
         tokenizer=tokenizer
     )
     
+    # 在训练开始前再次清理显存
+    torch.cuda.empty_cache()
+    
     # 开始训练
     logger.info("Starting training...")
     try:
+        # 添加显存使用监控
+        logger.info(f"Initial GPU memory: {torch.cuda.memory_allocated()/1024**3:.2f}GB allocated")
         trainer.train()
         
         # 保存模型
@@ -250,6 +269,7 @@ def main():
         
     except Exception as e:
         logger.error(f"Training failed: {str(e)}")
+        logger.error(f"GPU memory at failure: {torch.cuda.memory_allocated()/1024**3:.2f}GB allocated")
         raise
 
 if __name__ == "__main__":
