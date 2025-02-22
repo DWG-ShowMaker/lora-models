@@ -78,94 +78,68 @@ def load_dataset():
         logger.error(f"Error loading dataset: {str(e)}")
         raise
 
-def preprocess_function(examples, tokenizer, max_length):
-    """预处理数据集"""
-    logger = logging.getLogger(__name__)
-    try:
-        # 处理对话数据
-        conversations = []
-        
-        # 获取批次大小
-        if isinstance(examples, dict):
-            batch_size = len(examples['system'])
-            logger.info(f"Processing batch of size: {batch_size}")
+def preprocess_function(examples, tokenizer):
+    """
+    预处理函数，用于处理数据集中的样本。
+    Args:
+        examples: 包含system和conversation字段的样本
+        tokenizer: 用于tokenize文本的tokenizer
+    Returns:
+        处理后的样本，包含input_ids和labels
+    """
+    max_length = 512  # 最大序列长度
+    conversations = []
+    
+    # 确保examples是字典类型
+    if isinstance(examples, dict):
+        batch_size = len(examples["system"])
+    else:
+        print(f"Warning: examples is not a dict, type: {type(examples)}")
+        return {"input_ids": [], "labels": []}
+
+    # 处理每个样本
+    for i in range(batch_size):
+        try:
+            system = examples["system"][i]
+            conv = examples["conversation"][i]
             
-            # 遍历批次中的每个样本
-            for idx in range(batch_size):
-                try:
-                    # 获取system和conversation
-                    system = examples['system'][idx]
-                    conv = examples['conversation'][idx]
-                    
-                    # 调试信息
-                    logger.info(f"Sample {idx} - System: {system}")
-                    logger.info(f"Sample {idx} - Conversation type: {type(conv)}")
-                    
-                    # 将system prompt和对话组合在一起
-                    full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
-                    
-                    # 处理对话
-                    if isinstance(conv, (list, str)):
-                        # 如果是字符串，尝试解析JSON
-                        if isinstance(conv, str):
-                            try:
-                                conv = json.loads(conv)
-                            except json.JSONDecodeError as e:
-                                logger.error(f"Failed to parse conversation JSON at index {idx}: {e}")
-                                continue
-                        
-                        # 确保conv是列表
-                        if not isinstance(conv, list):
-                            conv = [conv]
-                        
-                        # 调试信息
-                        logger.info(f"Sample {idx} - Parsed conversation: {conv}")
-                        
-                        for turn in conv:
-                            if isinstance(turn, dict):
-                                if "human" in turn and "assistant" in turn:
-                                    full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
-                                    full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
-                    
-                    # 调试信息
-                    logger.info(f"Sample {idx} - Full conversation: {full_conversation}")
-                    conversations.append(full_conversation)
-                    
-                except Exception as e:
-                    logger.error(f"Error processing conversation at index {idx}: {str(e)}")
+            if not isinstance(conv, list):
+                print(f"Warning: conversation is not a list, type: {type(conv)}")
+                continue
+                
+            # 构建完整对话
+            full_conversation = f"System: {system}\n"
+            for turn in conv:
+                if not isinstance(turn, dict):
+                    print(f"Warning: turn is not a dict, type: {type(turn)}")
                     continue
+                    
+                if "human" in turn and "assistant" in turn:
+                    full_conversation += f"Human: {turn['human']}\nAssistant: {turn['assistant']}\n"
+            
+            conversations.append(full_conversation)
+            
+        except Exception as e:
+            print(f"Error processing sample {i}: {str(e)}")
+            continue
+    
+    if not conversations:
+        print("Warning: No valid conversations processed")
+        return {"input_ids": [], "labels": []}
         
-        if not conversations:
-            logger.warning("No valid conversations processed in this batch")
-            # 返回空的张量，保持与预期输出格式一致
-            return {
-                "input_ids": torch.zeros((0, max_length), dtype=torch.long),
-                "attention_mask": torch.zeros((0, max_length), dtype=torch.long),
-                "labels": torch.zeros((0, max_length), dtype=torch.long)
-            }
-        
-        logger.info(f"Successfully processed {len(conversations)} conversations")
-        
-        # 使用tokenizer处理文本
-        logger.info("Tokenizing conversations...")
-        model_inputs = tokenizer(
-            conversations,
-            max_length=max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        )
-        
-        # 设置labels与input_ids相同（用于自回归训练）
-        model_inputs["labels"] = model_inputs["input_ids"].clone()
-        
-        logger.info(f"Tokenization completed. Input shape: {model_inputs['input_ids'].shape}")
-        return model_inputs
-        
-    except Exception as e:
-        logger.error(f"Error in preprocessing: {str(e)}")
-        logger.error(f"Error details: {type(e).__name__}")
-        raise
+    # Tokenize conversations
+    tokenized = tokenizer(
+        conversations,
+        max_length=max_length,
+        truncation=True,
+        padding="max_length",
+        return_tensors="pt"
+    )
+    
+    return {
+        "input_ids": tokenized["input_ids"],
+        "labels": tokenized["input_ids"].clone()
+    }
 
 def compute_metrics(eval_preds):
     """计算评估指标"""
