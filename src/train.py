@@ -22,7 +22,48 @@ from utils import preprocess_function, compute_metrics
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+def ensure_directory_exists():
+    """确保必要的目录结构存在"""
+    directories = [
+        "data/raw",
+        "data/processed",
+        "checkpoints",
+        "logs"
+    ]
+    for directory in directories:
+        os.makedirs(directory, exist_ok=True)
+        logger.info(f"Ensured directory exists: {directory}")
+
+def check_dataset_files():
+    """检查数据集文件是否存在"""
+    required_files = {
+        "train": "data/processed/train.jsonl",
+        "test": "data/processed/test.jsonl"
+    }
+    
+    missing_files = []
+    for name, file_path in required_files.items():
+        if not os.path.exists(file_path):
+            missing_files.append(file_path)
+    
+    if missing_files:
+        raise FileNotFoundError(
+            f"Missing required dataset files: {', '.join(missing_files)}. "
+            "Please run prepare.py first to create the datasets."
+        )
+    else:
+        logger.info("All required dataset files found.")
+        for name, file_path in required_files.items():
+            file_size = os.path.getsize(file_path)
+            logger.info(f"{name} dataset size: {file_size/1024:.2f} KB")
+
 def main():
+    # 确保目录结构存在
+    ensure_directory_exists()
+    
+    # 检查数据集文件
+    check_dataset_files()
+    
     # 设置随机种子
     torch.manual_seed(42)
     
@@ -30,22 +71,38 @@ def main():
     model_dir = os.path.join("checkpoints", "qwen/Qwen2.5-7B")
     if not os.path.exists(model_dir):
         logger.info(f"Local model not found, downloading from ModelScope...")
-        model_dir = snapshot_download('qwen/Qwen2.5-7B', cache_dir='checkpoints')
+        try:
+            model_dir = snapshot_download('qwen/Qwen2.5-7B', cache_dir='checkpoints')
+            logger.info(f"Model downloaded successfully to {model_dir}")
+        except Exception as e:
+            raise RuntimeError(f"Failed to download model: {str(e)}")
     else:
         logger.info(f"Using local model from {model_dir}")
+        # 验证模型文件完整性
+        required_files = ['config.json', 'pytorch_model.bin', 'tokenizer.json']
+        missing_files = [f for f in required_files if not os.path.exists(os.path.join(model_dir, f))]
+        if missing_files:
+            raise FileNotFoundError(f"Model directory is incomplete. Missing files: {', '.join(missing_files)}")
     
     # 加载tokenizer和模型
     logger.info("Loading tokenizer and model...")
-    tokenizer = AutoTokenizer.from_pretrained(
-        model_dir,
-        trust_remote_code=True
-    )
-    model = AutoModelForCausalLM.from_pretrained(
-        model_dir,
-        trust_remote_code=True,
-        torch_dtype=torch.float16,
-        device_map="auto"
-    )
+    try:
+        tokenizer = AutoTokenizer.from_pretrained(
+            model_dir,
+            trust_remote_code=True
+        )
+        logger.info("Tokenizer loaded successfully")
+        
+        model = AutoModelForCausalLM.from_pretrained(
+            model_dir,
+            trust_remote_code=True,
+            torch_dtype=torch.float16,
+            device_map="auto"
+        )
+        logger.info("Model loaded successfully")
+        
+    except Exception as e:
+        raise RuntimeError(f"Failed to load model or tokenizer: {str(e)}")
     
     # 配置LoRA
     logger.info("Configuring LoRA")
@@ -58,25 +115,42 @@ def main():
         target_modules=config.lora_target_modules,
     )
     model = get_peft_model(model, peft_config)
+    logger.info("LoRA configuration completed")
     
     # 加载数据集
     logger.info("Loading datasets...")
-    data_files = {
-        "train": "data/processed/train.jsonl",
-        "test": "data/processed/test.jsonl"
-    }
-    dataset = load_dataset("json", data_files=data_files)
-    logger.info(f"Dataset loaded: {dataset}")
+    try:
+        data_files = {
+            "train": "data/processed/train.jsonl",
+            "test": "data/processed/test.jsonl"
+        }
+        dataset = load_dataset("json", data_files=data_files)
+        logger.info(f"Dataset loaded: {dataset}")
+        
+        if len(dataset["train"]) == 0:
+            raise ValueError("Training dataset is empty")
+        if len(dataset["test"]) == 0:
+            raise ValueError("Test dataset is empty")
+            
+    except Exception as e:
+        raise RuntimeError(f"Failed to load datasets: {str(e)}")
     
     # 预处理数据集
     logger.info("Preprocessing datasets...")
-    tokenized_datasets = dataset.map(
-        lambda x: preprocess_function(x, tokenizer),
-        batched=True,
-        batch_size=4,
-        remove_columns=dataset["train"].column_names
-    )
-    logger.info(f"Preprocessing completed. Train size: {len(tokenized_datasets['train'])}")
+    try:
+        tokenized_datasets = dataset.map(
+            lambda x: preprocess_function(x, tokenizer),
+            batched=True,
+            batch_size=4,
+            remove_columns=dataset["train"].column_names
+        )
+        logger.info(f"Preprocessing completed. Train size: {len(tokenized_datasets['train'])}")
+        
+        if len(tokenized_datasets["train"]) == 0:
+            raise ValueError("No valid examples in processed training dataset")
+            
+    except Exception as e:
+        raise RuntimeError(f"Failed to preprocess datasets: {str(e)}")
     
     # 训练参数
     current_time = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -107,13 +181,22 @@ def main():
     
     # 开始训练
     logger.info("Starting training...")
-    trainer.train()
-    
-    # 保存模型
-    logger.info("Saving final model...")
-    trainer.save_model(output_dir)
-    tokenizer.save_pretrained(output_dir)
-    logger.info("Training completed!")
+    try:
+        trainer.train()
+        
+        # 保存模型
+        logger.info("Saving final model...")
+        trainer.save_model(output_dir)
+        tokenizer.save_pretrained(output_dir)
+        logger.info("Training completed successfully!")
+        
+    except Exception as e:
+        logger.error(f"Training failed: {str(e)}")
+        raise
 
 if __name__ == "__main__":
-    main() 
+    try:
+        main()
+    except Exception as e:
+        logger.error(f"Training script failed: {str(e)}")
+        sys.exit(1) 
