@@ -32,10 +32,16 @@ def main():
     # 设置随机种子
     set_random_seed(config.seed)
     
-    # 使用ModelScope下载模型
-    logger.info(f"Loading model from {config.model_name_or_path}")
-    model_dir = snapshot_download('qwen/Qwen2.5-7B', cache_dir='checkpoints')
+    # 检查本地模型
+    model_dir = os.path.join("checkpoints", "qwen/Qwen2.5-7B")
+    if not os.path.exists(model_dir):
+        logger.info(f"Local model not found, downloading from ModelScope...")
+        model_dir = snapshot_download('qwen/Qwen2.5-7B', cache_dir='checkpoints')
+    else:
+        logger.info(f"Using local model from {model_dir}")
     
+    # 加载tokenizer和模型
+    logger.info("Loading tokenizer and model...")
     tokenizer = AutoTokenizer.from_pretrained(
         model_dir,
         trust_remote_code=True

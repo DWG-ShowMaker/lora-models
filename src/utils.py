@@ -5,6 +5,7 @@ import numpy as np
 import torch
 from transformers import set_seed
 from modelscope.msdatasets import MsDataset
+import json
 
 def setup_logging(save_path):
     """设置日志配置"""
@@ -28,41 +29,49 @@ def set_random_seed(seed):
     set_seed(seed)
 
 def load_dataset():
-    """加载ModelScope数据集"""
+    """加载数据集"""
     logger = logging.getLogger(__name__)
     
     try:
-        logger.info("Loading training dataset...")
+        # 检查本地数据集文件
+        train_file = os.path.join("data/processed", "train.jsonl")
+        test_file = os.path.join("data/processed", "test.jsonl")
+        
+        if os.path.exists(train_file) and os.path.exists(test_file):
+            logger.info("Loading local datasets...")
+            train_dataset = load_dataset("json", data_files=train_file)["train"]
+            test_dataset = load_dataset("json", data_files=test_file)["train"]
+            
+            logger.info(f"Loaded local datasets - Train: {len(train_dataset)} examples, Test: {len(test_dataset)} examples")
+            return train_dataset, test_dataset
+        
+        # 如果本地文件不存在，从ModelScope下载
+        logger.info("Local datasets not found, downloading from ModelScope...")
         train_dataset = MsDataset.load(
             'Moemuu/Muice-Dataset',
             subset_name='default',
             split='train',
             cache_dir='data/processed'
         )
-        
-        logger.info("Loading evaluation dataset...")
-        eval_dataset = MsDataset.load(
+        test_dataset = MsDataset.load(
             'Moemuu/Muice-Dataset',
             subset_name='default',
             split='test',
             cache_dir='data/processed'
         )
         
-        # 验证数据集格式
-        if not train_dataset or len(train_dataset) == 0:
-            raise ValueError("Training dataset is empty")
-        if not eval_dataset or len(eval_dataset) == 0:
-            raise ValueError("Evaluation dataset is empty")
-            
-        # 打印数据集信息
-        logger.info(f"Training dataset size: {len(train_dataset)}")
-        logger.info(f"Evaluation dataset size: {len(eval_dataset)}")
+        # 保存为jsonl格式
+        logger.info("Saving datasets to local files...")
+        with open(train_file, 'w', encoding='utf-8') as f:
+            for item in train_dataset:
+                f.write(json.dumps(item, ensure_ascii=False) + '\n')
         
-        # 检查数据集格式
-        sample = next(iter(train_dataset))
-        logger.info(f"Dataset sample keys: {list(sample.keys())}")
+        with open(test_file, 'w', encoding='utf-8') as f:
+            for item in test_dataset:
+                f.write(json.dumps(item, ensure_ascii=False) + '\n')
         
-        return train_dataset, eval_dataset
+        logger.info(f"Datasets saved to {train_file} and {test_file}")
+        return train_dataset, test_dataset
         
     except Exception as e:
         logger.error(f"Error loading dataset: {str(e)}")
