@@ -80,27 +80,34 @@ def load_dataset():
 
 def preprocess_function(examples, tokenizer, max_length):
     """预处理数据集"""
-    # 这里需要根据实际数据集格式调整
     try:
-        if isinstance(examples["text"], str):
-            texts = [examples["text"]]
-        elif isinstance(examples["text"], list):
-            texts = examples["text"]
-        else:
-            raise ValueError(f"Unexpected text format: {type(examples['text'])}")
+        # 处理对话数据
+        conversations = []
+        for system, conv in zip(examples["system"], examples["conversation"]):
+            # 将system prompt和对话组合在一起
+            full_conversation = f"<|im_start|>system\n{system}\n<|im_end|>\n"
+            
+            # 处理对话列表
+            for turn in conv:
+                if "human" in turn:
+                    full_conversation += f"<|im_start|>user\n{turn['human']}\n<|im_end|>\n"
+                if "assistant" in turn:
+                    full_conversation += f"<|im_start|>assistant\n{turn['assistant']}\n<|im_end|>\n"
+            
+            conversations.append(full_conversation)
         
+        # 使用tokenizer处理文本
         model_inputs = tokenizer(
-            texts,
+            conversations,
             max_length=max_length,
             padding="max_length",
             truncation=True,
             return_tensors="pt"
         )
         
-        # 如果是单个样本，去掉批次维度
-        if len(texts) == 1:
-            model_inputs = {k: v.squeeze(0) for k, v in model_inputs.items()}
-            
+        # 设置labels与input_ids相同（用于自回归训练）
+        model_inputs["labels"] = model_inputs["input_ids"].clone()
+        
         return model_inputs
         
     except Exception as e:
